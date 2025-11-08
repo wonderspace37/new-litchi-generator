@@ -25,10 +25,6 @@ def destination_point(lat, lon, bearing, distance_m):
 
 
 def generate_waypoints(init_lat, init_lon, init_bearing, waypoints):
-    """
-    Build the list of *relative* waypoints (WP1+).
-    WP0 (home) is handled in export_to_* so it’s always 5 m / hold 0.
-    """
     results = []
     curr_lat, curr_lon = init_lat, init_lon
     for wp in waypoints:
@@ -42,19 +38,18 @@ def generate_waypoints(init_lat, init_lon, init_bearing, waypoints):
             {
                 "latitude": lat2,
                 "longitude": lon2,
-                "altitude": max(2.0, vert),  # WP>=1 min altitude 2 m
+                "altitude": max(2.0, vert),
                 "true_bearing": bearing,
                 "hold_time": hold,
             }
         )
         curr_lat, curr_lon = lat2, lon2
-
     return results
 
 
 def _safe_tmp_path(suffix):
-    """Create a temp file path and close the OS fd immediately."""
-    fd, path = tempfile.mkstemp(suffix=suffix)
+    """Create a temp file path under /tmp (Vercel safe)."""
+    fd, path = tempfile.mkstemp(suffix=suffix, dir="/tmp")
     os.close(fd)
     return path
 
@@ -68,14 +63,9 @@ def export_to_litchi_csv(
     curve=0,
     pitch=0,
     photo_interval=1,
-    init_heading_deg=0,  # optional: heading to use for WP0
+    init_heading_deg=0,
 ):
-    """
-    Write a Litchi-compatible CSV.
-    Includes WP0 as the initial coordinate at 5 m (hold 0), then WP1+ from `waypoints`.
-    """
     filename = _safe_tmp_path(".csv")
-
     headers = [
         "latitude",
         "longitude",
@@ -96,24 +86,22 @@ def export_to_litchi_csv(
         "photo_timeinterval",
         "photo_distinterval",
     ]
-
-    with open(filename, "w", newline="") as f:
+    with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
-
-        # --- WP0 (home) row: always 5 m, hold 0 ---
+        # WP0
         writer.writerow(
             {
                 "latitude": init_lat,
                 "longitude": init_lon,
-                "altitude(m)": 5,  # WP0 fixed at 5 m
+                "altitude(m)": 5,
                 "heading(deg)": float(init_heading_deg),
                 "curvesize(m)": float(curve),
                 "rotationdir": 0,
                 "gimbalmode": 0,
                 "gimbalpitchangle": float(pitch),
                 "actiontype1": 0,
-                "actionparam1": 0,  # hold 0 ms for WP0
+                "actionparam1": 0,
                 "altitudemode": 0,
                 "speed(m/s)": float(speed),
                 "poi_latitude": init_lat,
@@ -124,8 +112,7 @@ def export_to_litchi_csv(
                 "photo_distinterval": 0,
             }
         )
-
-        # --- WP1+ from generated results ---
+        # WP1+
         for wp in waypoints:
             writer.writerow(
                 {
@@ -138,9 +125,7 @@ def export_to_litchi_csv(
                     "gimbalmode": 0,
                     "gimbalpitchangle": float(pitch),
                     "actiontype1": 0,
-                    "actionparam1": int(
-                        float(wp.get("hold_time", 0)) * 1000
-                    ),  # sec → ms
+                    "actionparam1": int(float(wp.get("hold_time", 0)) * 1000),
                     "altitudemode": 0,
                     "speed(m/s)": float(speed),
                     "poi_latitude": init_lat,
@@ -151,17 +136,12 @@ def export_to_litchi_csv(
                     "photo_distinterval": 0,
                 }
             )
-
     return filename
 
 
 def export_to_kml(init_lat, init_lon, waypoints):
-    """
-    Simple KML path: includes WP0 at (init_lat, init_lon, 5) then WP1+ with their altitudes.
-    """
     filename = _safe_tmp_path(".kml")
-
-    with open(filename, "w") as f:
+    with open(filename, "w", encoding="utf-8") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write('<kml xmlns="http://www.opengis.net/kml/2.2">\n')
         f.write("  <Document>\n")
@@ -175,17 +155,12 @@ def export_to_kml(init_lat, init_lon, waypoints):
         f.write("        <tessellate>1</tessellate>\n")
         f.write("        <altitudeMode>absolute</altitudeMode>\n")
         f.write("        <coordinates>\n")
-
-        # WP0
         f.write(f"          {init_lon},{init_lat},5\n")
-        # WP1+
         for wp in waypoints:
             f.write(f'          {wp["longitude"]},{wp["latitude"]},{wp["altitude"]}\n')
-
         f.write("        </coordinates>\n")
         f.write("      </LineString>\n")
         f.write("    </Placemark>\n")
         f.write("  </Document>\n")
         f.write("</kml>\n")
-
     return filename

@@ -1,8 +1,6 @@
-# api/index.py
 from flask import Flask, request, send_file, render_template
 from waypoint_logic import generate_waypoints, export_to_litchi_csv, export_to_kml
-from vercel import VercelMiddleware  # 👈 optional helper if you use it
-import json, os, tempfile
+import os
 
 app = Flask(__name__, template_folder="templates")
 
@@ -42,10 +40,18 @@ def generate():
         mime = "text/csv"
         download = "litchi_waypoints.csv"
 
-    return send_file(
+    response = send_file(
         filename, mimetype=mime, as_attachment=True, download_name=download
     )
 
+    # Clean up temp file after sending
+    try:
+        os.remove(filename)
+    except Exception:
+        pass
 
-# 👇 This line tells Vercel what to call
+    return response
+
+
+# Vercel entrypoint
 handler = app
