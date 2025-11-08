@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Litchi Waypoint Generator • Map + 3D Preview</title>
+
+  <!-- MapLibre, Turf, Three.js -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+  <style>
+    :root{--bg:#0e1117;--panel:#151a23;--muted:#8a8fa3;--text:#e7e9ef;--accent:#3b82f6;--border:#21293a}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+    .layout{display:grid;grid-template-columns:360px 1fr;grid-template-rows:55% 45%;gap:10px;height:100vh;padding:10px}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.25);padding:14px;overflow:auto}
+    #map{width:100%;height:100%;border-radius:14px}
+    #preview3d{width:100%;height:100%;border-radius:14px;background:#0b0d12}
+    h1{font-size:18px;margin:0 0 10px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+    input,select,button{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:#0f141c;color:var(--text)}
+    select{appearance:none}
+    input:focus,select:focus{outline:2px solid #24406d}
+    button.primary{background:var(--accent);border:none;color:white;font-weight:600;cursor:pointer}
+    button.ghost{background:#101521;border:1px solid var(--border);cursor:pointer}
+    .stack{display:flex;gap:10px}
+    .stack>*{flex:1}
+    .muted{color:var(--muted);font-size:12px}
+    .hr{height:1px;background:var(--border);margin:12px 0}
+    .pill{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:#0f141c;color:#b7c2d9;font-size:11px}
+    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+    th,td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left}
+    th{color:#aab}
+    td.actions{width:40px;text-align:right}
+    .hint{font-size:12px;color:#9aa4bd;margin-top:6px}
+    .footer{font-size:11px;color:#8b94ac;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="panel" id="controls">
+      <h1>🛰️ Litchi Waypoint Generator</h1>
+
+      <!-- Input rows -->
+      <div class="row">
+        <div><label>Initial Latitude</label><input id="lat" value="37.526643" /></div>
+        <div><label>Initial Longitude</label><input id="lon" value="-121.966697" /></div>
+      </div>
+      <div class="row">
+        <div><label>Initial Bearing (°)</label><input id="bearing" value="0" /></div>
+        <div><label>POI Altitude (m)</label><input id="poi" value="1" /></div>
+      </div>
+      <div class="row-3">
+        <div><label>Speed (m/s)</label><input id="speed" value="0" /></div>
+        <div><label>Curve Size (m)</label><input id="curve" value="0" /></div>
+        <div><label>Gimbal Pitch (°)</label><input id="pitch" value="0" /></div>
+      </div>
+      <div class="row">
+        <div><label>Photo Interval (s)</label><input id="photoInterval" value="1" /></div>
+        <div style="display:flex;align-items:end;justify-content:flex-end">
+          <span class="pill">Rule: WP0 = 5 m • WP ≥1 min 2 m</span>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="stack">
+        <button class="ghost" id="setHome">📍 Set Home from Map Center</button>
+        <button class="ghost" id="addFromMap">➕ Add WP @ Center</button>
+        <button class="ghost" id="clearWPs">🗑️ Clear WPs</button>
+      </div>
+      <div class="hint">Tip: click map to add waypoint. Drag markers to move.</div>
+
+      <div class="hr"></div>
+      <table id="wpTable">
+        <thead>
+          <tr><th>#</th><th>Lat</th><th>Lon</th><th>Alt (m)</th><th>Hold (s)</th><th></th></tr>
+        </thead><tbody></tbody>
+      </table>
+
+      <div class="hr"></div>
+
+      <!-- Format dropdown -->
+      <div class="row">
+        <div>
+          <label>Output Format</label>
+          <select id="format">
+            <option value="csv" selected>CSV (Litchi)</option>
+            <option value="kml">KML (Google Earth)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:end;">
+          <button class="primary" id="generate">Generate</button>
+        </div>
+      </div>
+
+      <button class="ghost" id="preview3s" style="margin-top:8px">🎬 3-sec 3D Preview</button>
+      <div id="status" class="hint"></div>
+      <div class="footer">Outputs Litchi CSV or KML for Google Earth preview.</div>
+    </div>
+
+    <div id="map"></div>
+    <div id="preview3d" class="panel"></div>
+  </div>
+
+<script>
+  // --- STATE ---
+  let map, scene, camera, renderer, animationId;
+  let markers = [];
+  let home = { lat: 37.526643, lon: -121.966697, alt: 5 };
+
+  // --- MAP SETUP ---
+  map = new maplibregl.Map({
+    container:'map',
+    style:'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    center:[home.lon, home.lat],
+    zoom:16
+  });
+  map.addControl(new maplibregl.NavigationControl(),'top-right');
+  map.on('load', ()=> drawHomeMarker());
+  map.on('click', e => addWaypointAt(e.lngLat.lng, e.lngLat.lat, 10, 0));
+
+  function drawHomeMarker(){
+    if(window.homeMarker) window.homeMarker.remove();
+    const el = document.createElement('div');
+    el.style.cssText='width:16px;height:16px;background:#22c55e;border:2px solid #fff;border-radius:50%';
+    el.title='Home (WP0, 5m)';
+    window.homeMarker = new maplibregl.Marker({element:el,draggable:true})
+      .setLngLat([home.lon,home.lat]).addTo(map);
+    window.homeMarker.on('dragend',()=>{
+      const p=window.homeMarker.getLngLat();
+      home={lat:p.lat,lon:p.lng,alt:5}; renderWpTable();
+    });
+  }
+  function addWaypointAt(lon,lat,alt=2,hold=0){
+    const el=document.createElement('div');
+    el.style.cssText='width:14px;height:14px;background:#3b82f6;border:2px solid #fff;border-radius:50%';
+    const m=new maplibregl.Marker({element:el,draggable:true}).setLngLat([lon,lat]).addTo(map);
+    const wp={marker:m,lat,lon,alt:Math.max(2,alt||2),hold:Math.max(0,hold||0)};
+    m.on('dragend',()=>{const p=m.getLngLat();wp.lat=p.lat;wp.lon=p.lng;renderWpTable();});
+    markers.push(wp); renderWpTable();
+  }
+
+  document.getElementById('setHome').onclick=()=>{const c=map.getCenter();home={lat:c.lat,lon:c.lng,alt:5};drawHomeMarker();renderWpTable();};
+  document.getElementById('addFromMap').onclick=()=>{const c=map.getCenter();addWaypointAt(c.lng,c.lat,10,0);};
+  document.getElementById('clearWPs').onclick=()=>{markers.forEach(w=>w.marker.remove());markers=[];renderWpTable();};
+
+  function renderWpTable(){
+    const tb=document.querySelector('#wpTable tbody'); tb.innerHTML='';
+    const tr0=document.createElement('tr');
+    tr0.innerHTML=`<td>0</td><td>${home.lat.toFixed(6)}</td><td>${home.lon.toFixed(6)}</td><td><span class='pill'>5</span></td><td><span class='pill'>0</span></td><td></td>`;
+    tb.appendChild(tr0);
+    markers.forEach((wp,i)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${i+1}</td><td>${wp.lat.toFixed(6)}</td><td>${wp.lon.toFixed(6)}</td>
+        <td><input data-k='alt' data-i='${i}' value='${wp.alt}'/></td>
+        <td><input data-k='hold' data-i='${i}' value='${wp.hold}'/></td>
+        <td class='actions'><button class='ghost' data-del='${i}'>✖</button></td>`;
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll('input[data-k]').forEach(inp=>{
+      inp.onchange=()=>{const i=+inp.dataset.i;const k=inp.dataset.k;const v=+inp.value;
+        if(k==='alt')markers[i].alt=Math.max(2,v||2);
+        if(k==='hold')markers[i].hold=Math.max(0,v||0);
+        renderWpTable();
+      };
+    });
+    tb.querySelectorAll('button[data-del]').forEach(btn=>{
+      btn.onclick=()=>{const i=+btn.dataset.del;markers[i].marker.remove();markers.splice(i,1);renderWpTable();};
+    });
+  }
+
+  // --- GEO HELPERS ---
+  function metersBetween(a,b){return turf.distance(turf.point([a.lon,a.lat]),turf.point([b.lon,b.lat]),{units:'kilometers'})*1000;}
+  function trueBearing(a,b){let brg=turf.bearing(turf.point([a.lon,a.lat]),turf.point([b.lon,b.lat]));if(brg<0)brg+=360;return brg;}
+  function relativeBearing(tB,iB){let r=(tB-iB)%360;if(r<0)r+=360;return r;}
+  function collectWaypointsRelative(){
+    const initB=parseFloat(document.getElementById('bearing').value||0);
+    const wps=[]; let prev={lat:home.lat,lon:home.lon};
+    markers.forEach(wp=>{
+      const horiz=metersBetween(prev,wp), tB=trueBearing(prev,wp), rel=relativeBearing(tB,initB);
+      wps.push({horizontal:horiz,vertical:Math.max(2,+wp.alt||2),bearing:rel,hold_time:Math.max(0,+wp.hold||0)});
+      prev={lat:wp.lat,lon:wp.lon};
+    }); return wps;
+  }
+
+  // --- GENERATE ---
+  document.getElementById('generate').onclick=async()=>{
+    const fmt=document.getElementById('format').value;
+    const payload={
+      init_lat:+document.getElementById('lat').value,
+      init_lon:+document.getElementById('lon').value,
+      init_bearing:+document.getElementById('bearing').value||0,
+      poi_altitude:+document.getElementById('poi').value||1,
+      speed_start:+document.getElementById('speed').value||0,
+      curve_size:+document.getElementById('curve').value||0,
+      gimbal_pitch:+document.getElementById('pitch').value||0,
+      photo_interval:+document.getElementById('photoInterval').value||1,
+      format:fmt,
+      waypoints:collectWaypointsRelative()
+    };
+    try{
+      document.getElementById('status').textContent='⏳ Generating…';
+      const res=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!res.ok)throw new Error('Server '+res.status);
+      const blob=await res.blob();const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=fmt==='kml'?'litchi_waypoints.kml':'litchi_waypoints.csv';
+      document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+      document.getElementById('status').textContent='✅ '+fmt.toUpperCase()+' generated.';
+    }catch(e){
+      document.getElementById('status').textContent='❌ Error: '+e.message;
+    }
+  };
+
+  // --- 3D PREVIEW (Three.js) ---
+  const container=document.getElementById('preview3d');
+  renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(container.clientWidth,container.clientHeight);
+  container.appendChild(renderer.domElement);
+  scene=new THREE.Scene();scene.background=new THREE.Color(0x0b0d12);
+  camera=new THREE.PerspectiveCamera(50,container.clientWidth/container.clientHeight,0.1,100000);
+  camera.position.set(0,-150,100);
+  scene.add(new THREE.DirectionalLight(0xffffff,1).position.set(120,-90,180));
+  scene.add(new THREE.AmbientLight(0xffffff,0.4));
+  scene.add(new THREE.GridHelper(400,40));
+
+  window.addEventListener('resize',()=>{renderer.setSize(container.clientWidth,container.clientHeight);camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();});
+
+  function buildPreview(){
+    for(let i=scene.children.length-1;i>=0;i--){const o=scene.children[i];if(o.userData&&o.userData.path)scene.remove(o);}
+    const pts=[{lat:home.lat,lon:home.lon,alt:5},...markers.map(w=>({lat:w.lat,lon:w.lon,alt:Math.max(2,+w.alt||2)}))];
+    if(pts.length<2)return null;
+    const ref=pts[0];
+    const toXY=p=>[turf.distance(turf.point([ref.lon,ref.lat]),turf.point([p.lon,ref.lat]),{units:'kilometers'})*1000*(p.lon>=ref.lon?1:-1),
+                   turf.distance(turf.point([ref.lon,ref.lat]),turf.point([ref.lon,p.lat]),{units:'kilometers'})*1000*(p.lat>=ref.lat?1:-1)];
+    const pos=[];pts.forEach(p=>{const [x,y]=toXY(p);pos.push(x,y,p.alt);});
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0x3b82f6}));l.userData.path=true;scene.add(l);
+    return pos;
+  }
+
+  document.getElementById('preview3s').onclick=()=>{
+    const pos=buildPreview();if(!pos)return;
+    const drone=new THREE.Mesh(new THREE.SphereGeometry(2,24,16),new THREE.MeshStandardMaterial({color:0xffffff}));
+    scene.add(drone);
+    const duration=3000,start=performance.now();
+    const step=now=>{
+      const t=Math.min(1,(now-start)/duration),n=pos.length/3-1,idx=t*n,i=Math.floor(idx),a=idx-i;
+      const i3=i*3;drone.position.set(pos[i3]*(1-a)+pos[i3+3]*a,pos[i3+1]*(1-a)+pos[i3+4]*a,pos[i3+2]*(1-a)+pos[i3+5]*a);
+      camera.lookAt(drone.position);renderer.render(scene,camera);
+      if(t<1)animationId=requestAnimationFrame(step);else scene.remove(drone);
+    };
+    if(animationId)cancelAnimationFrame(animationId);
+    animationId=requestAnimationFrame(step);
+  };
+
+  renderWpTable();
+</script>
+</body>
+</html>
