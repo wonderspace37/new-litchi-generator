@@ -4,11 +4,9 @@ import os
 
 app = Flask(__name__, template_folder="templates")
 
-
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -40,10 +38,8 @@ def generate():
         mime = "text/csv"
         download = "litchi_waypoints.csv"
 
-    response = send_file(
-        filename, mimetype=mime, as_attachment=True, download_name=download
-    )
-
+    response = send_file(filename, mimetype=mime, as_attachment=True, download_name=download)
+    
     # Clean up temp file after sending
     try:
         os.remove(filename)
@@ -52,6 +48,5 @@ def generate():
 
     return response
 
-
-# Vercel entrypoint
+# Export for Vercel
 handler = app

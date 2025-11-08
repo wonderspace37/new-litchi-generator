@@ -3,9 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <title>Litchi Waypoint Generator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #f5f6fa; color: #333; }
+    h1 { color: #2563eb; }
+    pre { background: #e5e7eb; padding: 1rem; border-radius: 8px; }
+  </style>
 </head>
 <body>
-  <h1>Litchi Waypoint Generator</h1>
-  <p>API ready at <code>/generate</code>. Use a POST request with JSON input to generate CSV or KML.</p>
+  <h1>🚀 Litchi Waypoint Generator API</h1>
+  <p>Your Flask backend is running successfully!</p>
+  <p>To generate waypoints, send a <code>POST</code> request to <code>/generate</code> with JSON like:</p>
+  <pre>{
+  "init_lat": 37.7749,
+  "init_lon": -122.4194,
+  "init_bearing": 90,
+  "poi_altitude": 10,
+  "format": "csv",
+  "waypoints": [
+    {"horizontal": 50, "vertical": 5, "bearing": 0, "hold_time": 2},
+    {"horizontal": 30, "vertical": 6, "bearing": 90, "hold_time": 1}
+  ]
+}</pre>
+  <p>Try sending this with Postman, curl, or your frontend app to download <strong>CSV</strong> or <strong>KML</strong> files.</p>
 </body>
 </html>

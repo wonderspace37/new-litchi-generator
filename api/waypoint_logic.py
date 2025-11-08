@@ -5,7 +5,6 @@ import tempfile
 
 EARTH_RADIUS = 6378137.0  # meters
 
-
 def destination_point(lat, lon, bearing, distance_m):
     """Project from (lat, lon) by distance_m along bearing (deg)."""
     lat1 = math.radians(lat)
@@ -23,8 +22,8 @@ def destination_point(lat, lon, bearing, distance_m):
     )
     return math.degrees(lat2), math.degrees(lon2)
 
-
 def generate_waypoints(init_lat, init_lon, init_bearing, waypoints):
+    """Generate relative GPS waypoints from input JSON data."""
     results = []
     curr_lat, curr_lon = init_lat, init_lon
     for wp in waypoints:
@@ -34,18 +33,15 @@ def generate_waypoints(init_lat, init_lon, init_bearing, waypoints):
         hold = float(wp.get("hold_time", 0.0))
 
         lat2, lon2 = destination_point(curr_lat, curr_lon, bearing, horiz)
-        results.append(
-            {
-                "latitude": lat2,
-                "longitude": lon2,
-                "altitude": max(2.0, vert),
-                "true_bearing": bearing,
-                "hold_time": hold,
-            }
-        )
+        results.append({
+            "latitude": lat2,
+            "longitude": lon2,
+            "altitude": max(2.0, vert),
+            "true_bearing": bearing,
+            "hold_time": hold,
+        })
         curr_lat, curr_lon = lat2, lon2
     return results
-
 
 def _safe_tmp_path(suffix):
     """Create a temp file path under /tmp (Vercel safe)."""
@@ -53,93 +49,48 @@ def _safe_tmp_path(suffix):
     os.close(fd)
     return path
 
-
 def export_to_litchi_csv(
-    init_lat,
-    init_lon,
-    waypoints,
-    poi_altitude=1,
-    speed=0,
-    curve=0,
-    pitch=0,
-    photo_interval=1,
-    init_heading_deg=0,
+    init_lat, init_lon, waypoints, poi_altitude=1,
+    speed=0, curve=0, pitch=0, photo_interval=1, init_heading_deg=0,
 ):
+    """Generate a Litchi-compatible CSV file."""
     filename = _safe_tmp_path(".csv")
     headers = [
-        "latitude",
-        "longitude",
-        "altitude(m)",
-        "heading(deg)",
-        "curvesize(m)",
-        "rotationdir",
-        "gimbalmode",
-        "gimbalpitchangle",
-        "actiontype1",
-        "actionparam1",
-        "altitudemode",
-        "speed(m/s)",
-        "poi_latitude",
-        "poi_longitude",
-        "poi_altitude(m)",
-        "poi_altitudemode",
-        "photo_timeinterval",
-        "photo_distinterval",
+        "latitude","longitude","altitude(m)","heading(deg)","curvesize(m)","rotationdir",
+        "gimbalmode","gimbalpitchangle","actiontype1","actionparam1","altitudemode",
+        "speed(m/s)","poi_latitude","poi_longitude","poi_altitude(m)",
+        "poi_altitudemode","photo_timeinterval","photo_distinterval",
     ]
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
-        # WP0
-        writer.writerow(
-            {
-                "latitude": init_lat,
-                "longitude": init_lon,
-                "altitude(m)": 5,
-                "heading(deg)": float(init_heading_deg),
-                "curvesize(m)": float(curve),
-                "rotationdir": 0,
-                "gimbalmode": 0,
-                "gimbalpitchangle": float(pitch),
-                "actiontype1": 0,
-                "actionparam1": 0,
-                "altitudemode": 0,
-                "speed(m/s)": float(speed),
-                "poi_latitude": init_lat,
-                "poi_longitude": init_lon,
-                "poi_altitude(m)": float(poi_altitude),
-                "poi_altitudemode": 0,
-                "photo_timeinterval": float(photo_interval),
-                "photo_distinterval": 0,
-            }
-        )
+        # WP0 (home)
+        writer.writerow({
+            "latitude": init_lat,"longitude": init_lon,"altitude(m)": 5,
+            "heading(deg)": float(init_heading_deg),"curvesize(m)": float(curve),
+            "rotationdir": 0,"gimbalmode": 0,"gimbalpitchangle": float(pitch),
+            "actiontype1": 0,"actionparam1": 0,"altitudemode": 0,
+            "speed(m/s)": float(speed),"poi_latitude": init_lat,"poi_longitude": init_lon,
+            "poi_altitude(m)": float(poi_altitude),"poi_altitudemode": 0,
+            "photo_timeinterval": float(photo_interval),"photo_distinterval": 0,
+        })
         # WP1+
         for wp in waypoints:
-            writer.writerow(
-                {
-                    "latitude": wp["latitude"],
-                    "longitude": wp["longitude"],
-                    "altitude(m)": wp["altitude"],
-                    "heading(deg)": wp["true_bearing"],
-                    "curvesize(m)": float(curve),
-                    "rotationdir": 0,
-                    "gimbalmode": 0,
-                    "gimbalpitchangle": float(pitch),
-                    "actiontype1": 0,
-                    "actionparam1": int(float(wp.get("hold_time", 0)) * 1000),
-                    "altitudemode": 0,
-                    "speed(m/s)": float(speed),
-                    "poi_latitude": init_lat,
-                    "poi_longitude": init_lon,
-                    "poi_altitude(m)": float(poi_altitude),
-                    "poi_altitudemode": 0,
-                    "photo_timeinterval": float(photo_interval),
-                    "photo_distinterval": 0,
-                }
-            )
+            writer.writerow({
+                "latitude": wp["latitude"],"longitude": wp["longitude"],
+                "altitude(m)": wp["altitude"],"heading(deg)": wp["true_bearing"],
+                "curvesize(m)": float(curve),"rotationdir": 0,"gimbalmode": 0,
+                "gimbalpitchangle": float(pitch),"actiontype1": 0,
+                "actionparam1": int(float(wp.get("hold_time", 0)) * 1000),
+                "altitudemode": 0,"speed(m/s)": float(speed),
+                "poi_latitude": init_lat,"poi_longitude": init_lon,
+                "poi_altitude(m)": float(poi_altitude),"poi_altitudemode": 0,
+                "photo_timeinterval": float(photo_interval),"photo_distinterval": 0,
+            })
     return filename
 
-
 def export_to_kml(init_lat, init_lon, waypoints):
+    """Generate a simple KML path for visualization."""
     filename = _safe_tmp_path(".kml")
     with open(filename, "w", encoding="utf-8") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
