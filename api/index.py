@@ -5,7 +5,9 @@ from waypoint_logic import generate_waypoints, export_to_litchi_csv, export_to_k
 # Ensure we can import waypoint_logic
 sys.path.append(os.path.dirname(__file__))
 
-app = Flask(__name__, template_folder="../templates")
+app = Flask(
+    __name__, template_folder=os.path.join(os.path.dirname(__file__), "../templates")
+)
 
 
 @app.route("/")
