@@ -1,10 +1,9 @@
+# api/index.py
 from flask import Flask, request, send_file, render_template
 from waypoint_logic import generate_waypoints, export_to_litchi_csv, export_to_kml
-import json
-import os
-import tempfile
+from vercel import VercelMiddleware  # 👈 optional helper if you use it
+import json, os, tempfile
 
-# ✅ Flask app, templates live INSIDE /api/templates
 app = Flask(__name__, template_folder="templates")
 
 
@@ -15,7 +14,7 @@ def index():
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    data = request.get_json()
+    data = request.get_json(force=True)
     init_lat = float(data["init_lat"])
     init_lon = float(data["init_lon"])
     init_bearing = float(data["init_bearing"])
@@ -48,5 +47,5 @@ def generate():
     )
 
 
-# ✅ No app.run()
-# ✅ Just export `app` for Vercel
+# 👇 This line tells Vercel what to call
+handler = app
